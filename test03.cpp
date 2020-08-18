@@ -73,7 +73,7 @@ int main(int argc, char *argv[])
 	//half a(3.14159), b(-7), c = sin(a+b);
     unsigned int N = 2;
     unsigned int K = 32;
-    unsigned int C = 32;
+    unsigned int C = 4;
     unsigned int H = 4;
     unsigned int W = 4;
     unsigned int R = 1;
@@ -90,6 +90,7 @@ int main(int argc, char *argv[])
     half *out = (half *)malloc(outSize);
     half *cpu_out = (half *)malloc(outSize);
 
+    printf("=====size is %d=====\n",sizeof(half));
     HIP_ASSERT(hipSetDevice(0));
     hipInit(0);
 
@@ -104,13 +105,13 @@ int main(int argc, char *argv[])
         half tmp(1.0);
         half tmp2(0.0);
         //half min is 0.00006,so use 0.0001*constant,due to C*R*S=2880,if diff <0.001,it's ok
-        in[i] =  half_cast<half>(0.0001f*(i%10));
+        in[i] =  half_cast<half>(0.1f);
     }
 
     for (int i =0;i< K * C* R* S;i++)
     {
         half tmp(1.0);
-        wei[i] = half_cast<half>(1.0f);
+        wei[i] = half_cast<half>(1.0f*i);
     }
 
     for (int i =0;i< N * K* Oh* Ow;i++)
@@ -141,23 +142,41 @@ int main(int argc, char *argv[])
     unsigned int * host_int_test = (unsigned int *)malloc(256*4);
     for (int i =0;i<256;i++)
     {
-         host_int_test[0]=0;
+         host_int_test[i]=0;
     }
     unsigned int * kevin_int_test;
 
-    HIP_ASSERT(hipMalloc(&kevin_int_test, 256*4));
+    HIP_ASSERT(hipMalloc(&kevin_int_test, 256*sizeof(half)));
+
+    half * host_float_test= (half *)malloc(256*sizeof(half));
+    for (int i =0;i<256;i++)
+    {
+         host_float_test[i]=half_cast<half>(0.0f);
+    }
+    half* kevin_float_test;
+    HIP_ASSERT(hipMalloc(&kevin_float_test, 256*sizeof(half)));
 
     struct {
-        half * p_in_global;
+
         half * p_wei_global;
+        half * p_in_global;
         half * p_out_global;
         unsigned int  * kevin_int_test;
+        half* kevin_float_test;
+
+	unsigned int C;
+	unsigned int R;
+	unsigned int S;
     } args;
 
     args.p_in_global = dev_in;
     args.p_wei_global = dev_wei;
     args.p_out_global = dev_out;
+    args.C=C;
+    args.R=R;
+    args.S=S;
     args.kevin_int_test = kevin_int_test;
+    args.kevin_float_test= kevin_float_test;
 
     size_t arg_size = sizeof(args);
     void* config[] = {HIP_LAUNCH_PARAM_BUFFER_POINTER, &args, HIP_LAUNCH_PARAM_BUFFER_SIZE,
@@ -183,7 +202,9 @@ int main(int argc, char *argv[])
 
 
     HIP_ASSERT(hipMemcpy(out, dev_out, outSize, hipMemcpyDeviceToHost));
-
+    HIP_ASSERT(hipMemcpy(host_int_test, kevin_int_test, 256*4, hipMemcpyDeviceToHost));
+    HIP_ASSERT(hipMemcpy(host_float_test, kevin_float_test, 256*sizeof(half), hipMemcpyDeviceToHost));
+    /*
     for (int i = 0;i< N * K* Oh* Ow;i++ )
     {
         if ( i<1000)
@@ -200,11 +221,12 @@ int main(int argc, char *argv[])
 
     }
 
+*/
 
-
-    HIP_ASSERT(hipMemcpy(host_int_test, kevin_int_test, 256*4, hipMemcpyDeviceToHost));
+//    HIP_ASSERT(hipMemcpy(host_int_test, kevin_int_test, 256*4, hipMemcpyDeviceToHost));
+//    HIP_ASSERT(hipMemcpy(host_float_test, kevin_float_test, 256*4, hipMemcpyDeviceToHost));
     printf("======after test %u %u=====\n",host_int_test[0],host_int_test[1]);
-
+    printf("======after test %f %f %f=====\n",half_cast<float>(host_float_test[0]),half_cast<float>(host_float_test[1]),half_cast<float>(host_float_test[33]));
 
     HIP_ASSERT(hipFree(dev_in));
     HIP_ASSERT(hipFree(dev_wei));
