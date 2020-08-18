@@ -30,21 +30,36 @@ gridwise_group_convolution_forward_implicit_gemm_v4r4_xdlops_nchw_kcyx_nkhw: ; @
 
 
 
-.set vgpr_store_addr,2
+.set vgpr_store_addr,2;//2 3
 
 
 
 
 .set vgpr_tmp_int,9
 .set vgpr_wave_tid,10
-.set vgpr_wave_tid_offset,11
-.set vgpr_A_value,12
+.set vgpr_wave_tid_offset_8,11
+.set vgpr_wave_tid_offset_2,12
+.set vgpr_A_value,18;//18 19
 .set vgpr_wave_tid_offset_4,13
 .set vgpr_tmp_write_pos,124
 
 .set vgpr_A_mfma_value1,14;14:15
 .set vgpr_B_mfma_value1,16;16:!7
 
+.set vgpr_B_tid,8
+.set vgpr_tmp,7
+
+.set vgpr_B_ushort1,20
+.set vgpr_B_ushort2,21
+.set vgpr_B_ushort3,22
+.set vgpr_B_ushort4,23
+
+
+.set vgpr_B_tid_div_4,24
+.set vgpr_B_tid_rem_4,25
+.set vgpr_B_read_offset_first,26;//26 27
+
+.set vgpr_B_tid_offset_2,28;//28  
 
 s_load_dwordx2 s[sgpr_A_addr:sgpr_A_addr+1], s[sgpr_ker_arg:sgpr_ker_arg+1], 0x0
 s_load_dwordx2 s[sgpr_B_addr:sgpr_B_addr+1], s[sgpr_ker_arg:sgpr_ker_arg+1], 0x8
@@ -193,12 +208,13 @@ s_load_dwordx2 s[sgpr_kevin_test_float_addr:sgpr_kevin_test_float_addr+1], s[sgp
 	v_accvgpr_write_b32 a97, 0
 	v_accvgpr_write_b32 a96, 0
 s_waitcnt     lgkmcnt(0);
-
+/*
 s_mov_b32 s[sgpr_32],sgpr_32
 
+v_and_b32_e32     v[vgpr_wave_tid], 63, v0;
 s_or_saveexec_b64 s[sgpr_before_cmp_thread:sgpr_before_cmp_thread+1],exec
 v_cmpx_lt_u32 s[sgpr_tmp_cmp_thread:sgpr_tmp_cmp_thread+1], v0, s[sgpr_32]
-s_cbranch_scc0 read_B
+;s_cbranch_scc0 read_B
 
 read_A:
 
@@ -208,10 +224,9 @@ read_A:
 //global_store_dword v[0:1], v2, off offset:0
 
 
-v_and_b32_e32     v[vgpr_wave_tid], 63, v0;
-v_lshlrev_b32_e32 v[vgpr_wave_tid_offset], 1, v0;//v[vgpr_wave_tid]
+v_lshlrev_b32_e32 v[vgpr_wave_tid_offset_8], 3, v[vgpr_wave_tid];//every thread read 4 fp16, address: 4*2*tid
 v_lshlrev_b32_e32 v[vgpr_wave_tid_offset_4], 2, v[vgpr_wave_tid]
-
+v_lshlrev_b32_e32 v[vgpr_wave_tid_offset_2], 1, v[vgpr_wave_tid]
 
 
 v_mov_b32_e32 v[vgpr_store_addr],v[vgpr_wave_tid_offset_4]
@@ -229,7 +244,7 @@ s_mov_b32 s[sgpr_buf_A_addr+1],s[sgpr_A_addr+1]
 s_mov_b32 s[sgpr_buf_A_addr+2],-1
 s_mov_b32 s[sgpr_buf_A_addr+3],0x40000;Srd127_96
 
-buffer_load_ushort v[vgpr_A_value],v[vgpr_wave_tid_offset],s[sgpr_buf_A_addr:sgpr_buf_A_addr+3],0, offen offset:0
+buffer_load_dwordx2 v[vgpr_A_value:vgpr_A_value+1],v[vgpr_wave_tid_offset_8],s[sgpr_buf_A_addr:sgpr_buf_A_addr+3],0, offen offset:0
 
 
 
@@ -239,35 +254,64 @@ buffer_load_ushort v[vgpr_A_value],v[vgpr_wave_tid_offset],s[sgpr_buf_A_addr:sgp
 ;global_load_ushort v[vgpr_A_value],v[vgpr_wave_tid_offset:vgpr_wave_tid_offset+1],s[sgpr_A_addr:sgpr_A_addr+1]
 s_waitcnt vmcnt(0)
 
+*/
 
 
 
-
-
-;v_lshlrev_b32_e32 v[vgpr_tmp_write_pos], 2, v0
-;v_mov_b32_e32 v[vgpr_tmp_write_pos+1],0
-v_mov_b32_e32 v[vgpr_store_addr],v[vgpr_wave_tid_offset]
+/*a store
+v_mov_b32_e32 v[vgpr_store_addr],v[vgpr_wave_tid_offset_2]
 v_mov_b32_e32 v[vgpr_store_addr+1],0
 
 
 global_store_short v[vgpr_store_addr:vgpr_store_addr+1], v[vgpr_A_value], s[sgpr_kevin_test_float_addr:sgpr_kevin_test_float_addr+1]
+*/
+
+;s_branch read_end
 
 
-
-s_branch the_end
-
+/*
 read_B:
 
+s_mov_b64 exec,s[sgpr_before_cmp_thread:sgpr_before_cmp_thread+1]
 
-s_barrier;
+v_cmpx_ge_u32 s[sgpr_tmp_cmp_thread:sgpr_tmp_cmp_thread+1], v0, s[sgpr_32]
+
+v_mov_b32_e32 v[vgpr_tmp],s[sgpr_32]
+v_sub_u32_e32 v[vgpr_B_tid], v0, v[vgpr_tmp]
 
 
+v_lshrrev_b32_e32 v[vgpr_B_tid_div_4], 2, v[vgpr_B_tid];// /4
+v_and_b32_e32     v[vgpr_B_tid_rem_4], 3, v[vgpr_B_tid]; %4
 
+v_lshl_add_u32 v[vgpr_B_read_offset_first],v[vgpr_B_tid_div_4],4,v[vgpr_B_tid_rem_4]
 
-the_end:
+global_load_ushort v[vgpr_B_ushort1], v[vgpr_B_read_offset_first:vgpr_B_read_offset_first+1], s[sgpr_B_addr:sgpr_B_addr+1]
+
 
 s_waitcnt vmcnt(0)
+
+v_lshlrev_b32_e32 v[vgpr_B_tid_offset_2], 1, v[vgpr_B_tid]
+
+v_mov_b32_e32 v[vgpr_B_ushort1],2.0
+
+;v_mov_b32_e32 v[vgpr_store_addr],v[vgpr_B_tid_offset_2]
+v_mov_b32_e32 v[vgpr_store_addr],0
+v_mov_b32_e32 v[vgpr_store_addr+1],0
+global_store_short v[vgpr_store_addr:vgpr_store_addr+1], v[vgpr_B_ushort1], s[sgpr_kevin_test_float_addr:sgpr_kevin_test_float_addr+1]
+
+
+s_waitcnt vmcnt(0)
+
 s_mov_b64 exec,s[sgpr_before_cmp_thread:sgpr_before_cmp_thread+1]
+;vgpr_B_ushort1
+
+;s_barrier;
+*/
+
+
+
+read_end:
+
 
 	s_endpgm
 	.section	.rodata,#alloc
